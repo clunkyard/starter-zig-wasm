@@ -156,7 +156,7 @@ pub const AppliedV1 = extern struct {
 };
 pub const Applied = AppliedV1;
 
-/// The scan that produced this tick's contacts: the one your previous act asked for. 32 bytes.
+/// The scan that produced this tick's contacts: where the scanner points now, after slewing toward your previous act's scan. 32 bytes.
 pub const ScanV1 = extern struct {
     heading: f64 = 0,
     pitch: f64 = 0,
@@ -396,7 +396,7 @@ pub extern "clunkyard" fn gun_get_aim_pitch(out: *f64) i32;
 pub extern "clunkyard" fn gun_get_fire(out: *f64) i32;
 /// What this tick's act holds for a gun field so far, as set.
 pub extern "clunkyard" fn gun_get_power(out: *f64) i32;
-/// The scan that produced this tick's contacts.
+/// The scan that produced this tick's contacts: where the scanner points now.
 pub extern "clunkyard" fn scanner_last_v1(out: *ScanV1) i32;
 /// Robots this close are detected in any direction.
 pub extern "clunkyard" fn scanner_proximity_range(out: *f64) i32;
@@ -404,18 +404,24 @@ pub extern "clunkyard" fn scanner_proximity_range(out: *f64) i32;
 pub extern "clunkyard" fn scanner_reach(arc: f64, out: *f64) i32;
 /// The widest arc that still reaches this far, by hello.formulas.arcForReach.
 pub extern "clunkyard" fn scanner_arc_for_reach(range: f64, out: *f64) i32;
-/// Ask where the scanner points for the next state.
+/// Ask the scanner to turn toward a direction for the next state; it slews at scanner.turnRate, and the arc changes at once.
 pub extern "clunkyard" fn scanner_heading(value: f64) i32;
-/// Ask where the scanner points for the next state.
+/// Ask the scanner to turn toward a direction for the next state; it slews at scanner.turnRate, and the arc changes at once.
 pub extern "clunkyard" fn scanner_arc(value: f64) i32;
-/// Ask where the scanner points for the next state.
+/// Ask the scanner to turn toward a direction for the next state; it slews at scanner.turnRate, and the arc changes at once.
 pub extern "clunkyard" fn scanner_pitch(value: f64) i32;
+/// The scanner was on for the tick this state's contacts come from.
+pub extern "clunkyard" fn scanner_is_on(out: *i32) i32;
+/// Switch the scanner on (1) or off (0) for this tick; it is on unless an act switches it off. Off, it still slews and re-arcs but sees no scan or faint contacts and shows no beam.
+pub extern "clunkyard" fn scanner_on(value: f64) i32;
 /// What this tick's act holds for a scanner field so far, as set.
 pub extern "clunkyard" fn scanner_get_heading(out: *f64) i32;
 /// What this tick's act holds for a scanner field so far, as set.
 pub extern "clunkyard" fn scanner_get_arc(out: *f64) i32;
 /// What this tick's act holds for a scanner field so far, as set.
 pub extern "clunkyard" fn scanner_get_pitch(out: *f64) i32;
+/// What this tick's act holds for a scanner field so far, as set.
+pub extern "clunkyard" fn scanner_get_on(out: *f64) i32;
 /// Every contact this tick: scan and proximity first, nearest first, then passive ones.
 pub extern "clunkyard" fn sensors_contacts_v1(out: [*]ContactV1, capacity: u32, count: *u32) i32;
 /// The nearest precise contact this tick. Passive contacts are never returned.
