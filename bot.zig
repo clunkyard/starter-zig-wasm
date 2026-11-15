@@ -26,6 +26,7 @@
 // arena: arena_size arena_gravity arena_terrain_kind arena_ground_height
 // me: me_health me_position me_velocity me_heading me_pitch me_roll
 //   me_angular_velocity me_attitude me_grounded me_altitude me_applied
+//   me_hull_mounts me_to_mount me_from_mount me_mount_toward
 // battery: battery_charge battery_capacity battery_regen
 //   battery_sustainable_drive battery_compute battery_drive_cost
 // drive: drive_hover_lift drive_throttle drive_turn drive_pitch_turn
@@ -54,7 +55,8 @@
 //   nav_pickups nav_nearest_pickup nav_field_distance
 // score: score_me score_best score_armour
 // angles: angles_normalize angles_angle_diff angles_bearing_to
-//   angles_elevation_to angles_direction angles_distance angles_clamp
+//   angles_elevation_to angles_direction angles_distance angles_to_chassis
+//   angles_from_chassis angles_clamp
 // status: status_text status_value status_get_text status_get_value
 // raw: raw_number raw_text raw_has raw_flag raw_count raw_line raw_extra
 // session: session_log
@@ -67,9 +69,14 @@ const cy = @import("clunkyard.zig");
 const search_turn = 0.33;
 /// How long to look again where a robot was last seen.
 const memory_ticks = 60;
+/// How long a dodge lasts: half a second.
+const dodge_ticks = 10;
 
 var free_flight = false; // flying free, robots may be above or below
+var forces = false; // the force rulesets: push the hull, not steer it
 var last_slot: i32 = 0; // the robot seen most recently, 0 for none yet
+var dodge_until: i32 = 0; // the tick the dodge ends
+var dodges: i32 = 0; // how many dodges so far
 
 fn angleDiff(target: f64, current: f64) f64 {
     var diff: f64 = 0;
@@ -103,6 +110,9 @@ fn start() void {
     _ = cy.match_is_3d(&is_3d);
     _ = cy.arena_gravity(&gravity);
     free_flight = is_3d == 1 and gravity.z == 0;
+    var control: i32 = 0;
+    _ = cy.match_control(&control);
+    forces = control == cy.CONTROL_FORCES;
 }
 
 fn turn() void {
@@ -129,7 +139,8 @@ fn turn() void {
         _ = cy.scanner_pitch(target.elevation);
         // The heaviest shot that still covers the range in about a second,
         // aimed where the target will be, lobbed under gravity; straight at
-        // it when no shot reaches it.
+        // it when no shot reaches it. The lead is the intercept if the target
+        // holds its course.
         var power: f64 = 1;
         _ = cy.gun_power_for_flight_time(target.range, 1, &power);
         var aim: cy.Solution = .{};
@@ -173,6 +184,33 @@ fn turn() void {
         _ = cy.scanner_heading(scan.heading + 36);
         _ = cy.scanner_arc(40);
         _ = cy.scanner_pitch(if (free_flight) @as(f64, @floatFromInt(@mod(@divTrunc(tick, 10), 3) - 1)) * 35 else 0);
+    }
+
+    // A simple dodge: vary it, or predict the shooter. A muzzle cue means a
+    // robot fired; for half a second swerve off the line of fire, left and
+    // right in turn. More cues than the array holds (cy.SHORT) count as none
+    // heard.
+    var cues: [8]cy.Contact = undefined;
+    var count: u32 = 0;
+    if (tick >= dodge_until and cy.sensors_cues(&cues, cues.len, &count) == cy.OK) {
+        for (cues[0..count]) |heard| {
+            if (heard.source == cy.SOURCE_MUZZLE) {
+                dodge_until = tick + dodge_ticks;
+                dodges += 1;
+                break;
+            }
+        }
+    }
+    if (tick < dodge_until) {
+        // Turn is positive left, strafe positive right.
+        const side: f64 = if (@mod(dodges, 2) == 1) 1 else -1;
+        if (forces) {
+            _ = cy.drive_throttle(0.5);
+            _ = cy.drive_strafe(-side);
+        } else {
+            _ = cy.drive_throttle(1);
+            _ = cy.drive_turn(side);
+        }
     }
 
     // Low battery: drive gently so the shots can still be paid for.

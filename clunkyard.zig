@@ -308,6 +308,14 @@ pub extern "clunkyard" fn me_grounded(out: *i32) i32;
 pub extern "clunkyard" fn me_altitude(out: *f64) i32;
 /// What the previous tick applied to you.
 pub extern "clunkyard" fn me_applied_v1(out: *AppliedV1) i32;
+/// Your turret and scanner are mounted on the hull: gun.aim, scanner.set, gun.aim_now and scanner.last are in your chassis frame, not world axes.
+pub extern "clunkyard" fn me_hull_mounts(out: *i32) i32;
+/// A world direction in the frame your mounts take: in your chassis frame (angles.to_chassis with me.attitude) when me.hull_mounts, unchanged otherwise.
+pub extern "clunkyard" fn me_to_mount(heading: f64, pitch: f64, out: *Direction) i32;
+/// A direction in your mounts' frame, such as gun.aim_now, in world axes: angles.from_chassis with me.attitude when me.hull_mounts, unchanged otherwise.
+pub extern "clunkyard" fn me_from_mount(heading: f64, pitch: f64, out: *Direction) i32;
+/// The direction from you to a point, in the frame your mounts take: me.to_mount of its bearing and elevation from you.
+pub extern "clunkyard" fn me_mount_toward(point: *const Vec3, out: *Direction) i32;
 /// Charge now, before this tick's regeneration and driving.
 pub extern "clunkyard" fn battery_charge(out: *f64) i32;
 /// Charge when full.
@@ -362,7 +370,7 @@ pub extern "clunkyard" fn drive_get_pitch_torque(out: *f64) i32;
 pub extern "clunkyard" fn drive_get_roll_torque(out: *f64) i32;
 /// What this tick's act holds for a drive field so far, as set.
 pub extern "clunkyard" fn drive_get_brake(out: *f64) i32;
-/// Where the turret points now; a shot leaves along it.
+/// Where the turret points now, in your mounts' frame (me.from_mount gives world axes); a shot leaves along it.
 pub extern "clunkyard" fn gun_aim_now(out: *Direction) i32;
 /// Ticks until the gun can fire; 0 means it can fire this tick.
 pub extern "clunkyard" fn gun_cooldown_ticks(out: *i32) i32;
@@ -406,7 +414,7 @@ pub extern "clunkyard" fn gun_get_aim_pitch(out: *f64) i32;
 pub extern "clunkyard" fn gun_get_fire(out: *f64) i32;
 /// What this tick's act holds for a gun field so far, as set.
 pub extern "clunkyard" fn gun_get_power(out: *f64) i32;
-/// The scan that produced this tick's contacts: where the scanner points now.
+/// The scan that produced this tick's contacts: where the scanner points now, in your mounts' frame.
 pub extern "clunkyard" fn scanner_last_v1(out: *ScanV1) i32;
 /// Robots this close are detected in any direction.
 pub extern "clunkyard" fn scanner_proximity_range(out: *f64) i32;
@@ -504,6 +512,10 @@ pub extern "clunkyard" fn angles_elevation_to(from: *const Vec3, to: *const Vec3
 pub extern "clunkyard" fn angles_direction(heading: f64, pitch: f64, out: *Vec3) i32;
 /// The straight-line distance between two points.
 pub extern "clunkyard" fn angles_distance(a: *const Vec3, b: *const Vec3, out: *f64) i32;
+/// A world direction as a heading and pitch in a chassis frame: with d = direction(heading, pitch), the heading of (d·forward, d·right) and the pitch atan2(d·up, √((d·forward)² + (d·right)²)).
+pub extern "clunkyard" fn angles_to_chassis_v1(heading: f64, pitch: f64, attitude: *const AttitudeV1, out: *Direction) i32;
+/// A chassis-frame heading h and pitch p in world axes: the direction of cos p cos h × forward + cos p sin h × right + sin p × up.
+pub extern "clunkyard" fn angles_from_chassis_v1(heading: f64, pitch: f64, attitude: *const AttitudeV1, out: *Direction) i32;
 /// A value held within low and high.
 pub extern "clunkyard" fn angles_clamp(value: f64, low: f64, high: f64, out: *f64) i32;
 /// Set the status line; leaving it out keeps the last one.
@@ -551,6 +563,8 @@ pub const nav_storm = nav_storm_v1;
 pub const nav_hill = nav_hill_v1;
 pub const nav_pickups = nav_pickups_v1;
 pub const nav_nearest_pickup = nav_nearest_pickup_v1;
+pub const angles_to_chassis = angles_to_chassis_v1;
+pub const angles_from_chassis = angles_from_chassis_v1;
 
 /// The module's exports: start runs once after the hello (null for none),
 /// turn once a state. Call it in a comptime block.
