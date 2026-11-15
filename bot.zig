@@ -2,7 +2,7 @@
 // robot core through the clunkyard.* imports in clunkyard.zig, next to this
 // file. It sweeps a medium scan to find a robot, narrows the scan to hold it,
 // leads it with shots whose power suits the range, fires only when the
-// turret is on target, keeps battery back for driving, looks again where it
+// turret is on target and its aim is earned, keeps battery back for driving, looks again where it
 // last saw one, follows a passive cue when it has nothing better and steps
 // out of the storm.
 //
@@ -11,7 +11,11 @@
 //   power    heavy shots hit harder for less battery, but fly slowly
 //   battery  shots and driving share it, and it refills slowly
 //   turret   it turns at a limited rate; cy.gun_aim_now is where it points now
-//   fuel     every import costs fuel, so read each fact once a turn
+//   fuel     every import costs fuel, and so does every operator, so read
+//            each fact once a turn and keep what you remember in place
+// Bearing is earned: a scan contact's bearing is off by up to its
+// bearing_error degrees (a fixed share of the arc), so a wide beam finds a
+// robot and a narrow one aims at it. Contacts within 120 units are exact.
 // A cue (cy.tracker_cue) says roughly where a robot is, within its
 // bearing_error degrees: good for where to look, not where to shoot.
 // Clunkyard WebAssembly ABI 4: the robot calls the core through imports
@@ -71,12 +75,25 @@ const search_turn = 0.33;
 const memory_ticks = 60;
 /// How long a dodge lasts: half a second.
 const dodge_ticks = 10;
+/// Degrees: sweeps the circle in half a second.
+const search_arc = 40;
+/// Units across at the target: it stays in the beam from tick to tick.
+const hold_width = 60;
+/// Degrees: the narrowest the beam holds.
+const min_arc = 6;
+/// Ticks of sightings the aim averages.
+const window = 12;
+/// Narrow sightings in the window before a shot.
+const sightings = 8;
+/// Ticks between looks around the target, for a nearer robot.
+const look_every = 40;
 
 var free_flight = false; // flying free, robots may be above or below
 var forces = false; // the force rulesets: push the hull, not steer it
 var last_slot: i32 = 0; // the robot seen most recently, 0 for none yet
 var dodge_until: i32 = 0; // the tick the dodge ends
 var dodges: i32 = 0; // how many dodges so far
+var tick_rate: i32 = 0; // ticks a second
 
 fn angleDiff(target: f64, current: f64) f64 {
     var diff: f64 = 0;
@@ -104,7 +121,87 @@ fn steer(throttle: f64, heading: f64, elevation: f64, gain: f64, me_heading: f64
     _ = cy.drive_pitch_turn(unit((elevation - me_pitch) / gain));
 }
 
+/// One sighting of the target, as the sensors placed it.
+const Sighting = struct { tick: i32, bearing_error: f64, x: f64, y: f64, z: f64 };
+// The last `window` sightings of one robot. The core keeps a history
+// (cy.tracker_history), but reading its 32 records costs more fuel than a
+// turn can spare, so the robot keeps the few it uses itself.
+var sighted: [window]Sighting = undefined;
+var sighted_count: usize = 0; // sightings kept, in a ring
+var sighted_slot: i32 = 0; // the robot they are of
+
+var sighted_next: usize = 0; // where the next sighting goes, over the oldest
+
+fn remember(target: *const cy.Contact, tick: i32) void {
+    if (target.slot != sighted_slot) {
+        sighted_count = 0;
+        sighted_next = 0;
+    }
+    sighted_slot = target.slot;
+    sighted[sighted_next] = .{ .tick = tick, .bearing_error = target.bearing_error, .x = target.position.x, .y = target.position.y, .z = target.position.z };
+    sighted_next = (sighted_next + 1) % window;
+    if (sighted_count < window) sighted_count += 1;
+}
+
+/// A straight line through the narrowest of the last `window` ticks'
+/// sightings: where the robot is now and how fast it moves. Each sighting is
+/// off by its bearing_error; the line averages that out. Ordinary least
+/// squares, with time counted back from now so the line's value at now is its
+/// intercept.
+const Fit = struct { position: cy.Vec3, velocity: cy.Vec3, count: usize };
+fn fit(tick: i32) ?Fit {
+    const recent = sighted[0..sighted_count];
+    var best: f64 = 1e9;
+    for (recent) |s| {
+        if (s.tick > tick - window) best = @min(best, s.bearing_error);
+    }
+    var n: f64 = 0;
+    var st: f64 = 0;
+    var stt: f64 = 0;
+    var sx: f64 = 0;
+    var sy: f64 = 0;
+    var sz: f64 = 0;
+    var stx: f64 = 0;
+    var sty: f64 = 0;
+    var stz: f64 = 0;
+    const widest = 1.5 * best;
+    for (recent) |s| {
+        if (s.tick <= tick - window or s.bearing_error > widest) continue; // out of the window, or a look's wide sighting
+        const dt: f64 = @floatFromInt(s.tick - tick);
+        n += 1;
+        st += dt;
+        stt += dt * dt;
+        sx += s.x;
+        sy += s.y;
+        sz += s.z;
+        stx += dt * s.x;
+        sty += dt * s.y;
+        stz += dt * s.z;
+    }
+    if (n < 2) return null;
+    const spread = n * stt - st * st;
+    const rate: f64 = @floatFromInt(tick_rate);
+    const kx = (n * stx - st * sx) / spread;
+    const ky = (n * sty - st * sy) / spread;
+    const kz = (n * stz - st * sz) / spread;
+    return .{
+        .position = .{ .x = (sx - kx * st) / n, .y = (sy - ky * st) / n, .z = (sz - kz * st) / n },
+        .velocity = .{ .x = kx * rate, .y = ky * rate, .z = kz * rate },
+        .count = @intFromFloat(n),
+    };
+}
+
+/// The angle, in degrees, of a beam hold_width across at this range: atan by a rational fit, cheaper in fuel than a library call.
+fn holdArc(range: f64) f64 {
+    const x0: f64 = hold_width / 2.0 / range;
+    const flip = x0 > 1;
+    const x = if (flip) 1 / x0 else x0;
+    const angle = x / (1 + 0.28125 * x * x);
+    return 2 * (if (flip) 1.5707963 - angle else angle) * 57.29578;
+}
+
 fn start() void {
+    _ = cy.match_tick_rate(&tick_rate);
     var is_3d: i32 = 0;
     var gravity: cy.Vec3 = .{};
     _ = cy.match_is_3d(&is_3d);
@@ -126,25 +223,44 @@ fn turn() void {
     _ = cy.clock_tick(&tick);
     _ = cy.drive_brake(0.2);
 
-    var target: cy.Contact = .{};
+    // Answers read only when their import says OK, so not cleared first:
+    // clearing a struct costs fuel every turn.
+    var target: cy.Contact = undefined;
     var seen: i32 = 0;
-    var last: cy.Vec3 = .{};
-    var cue: cy.Cue = .{};
+    var last: cy.Vec3 = undefined;
+    var cue: cy.Cue = undefined;
     if (cy.sensors_nearest(&target) == cy.OK) {
         last_slot = target.slot;
         const throttle: f64 = if (target.range > 350) 0.7 else if (target.range < 200) -0.4 else 0.2;
         steer(throttle, target.bearing, target.elevation, 45, heading, pitch);
-        _ = cy.scanner_heading(target.bearing); // narrow: holds it, reaching about 735
-        _ = cy.scanner_arc(20);
+        remember(&target, tick);
+        // Halve the beam each tick until it is hold_width across at the target:
+        // narrow enough for a precise bearing, wide enough to keep it in. Every
+        // look_every ticks widen it for a tick, so a nearer robot can be found.
+        const hold = @max(min_arc, holdArc(target.range));
+        var beam: cy.Scan = .{};
+        _ = cy.scanner_last(&beam);
+        const arc: f64 = if (@mod(tick, look_every) == 0) search_arc else @max(hold, @min(search_arc, beam.arc / 2));
+        _ = cy.scanner_heading(target.bearing);
+        _ = cy.scanner_arc(arc);
         _ = cy.scanner_pitch(target.elevation);
         // The heaviest shot that still covers the range in about a second,
         // aimed where the target will be, lobbed under gravity; straight at
-        // it when no shot reaches it. The lead is the intercept if the target
-        // holds its course.
+        // it when no shot reaches it. An exact contact: gun_lead is the
+        // intercept if the target holds its course. A noisy one: lead the
+        // fitted line, and fire only once it rests on enough sightings.
         var power: f64 = 1;
         _ = cy.gun_power_for_flight_time(target.range, 1, &power);
         var aim: cy.Solution = .{};
-        if (cy.gun_lead(&target, power, &aim) != cy.OK) aim = .{ .heading = target.bearing, .pitch = target.elevation, .time = 0 };
+        var found = false;
+        var ready = true;
+        if (target.bearing_error > 0) {
+            if (fit(tick)) |line| {
+                found = cy.gun_lead_point(&line.position, &line.velocity, power, &aim) == cy.OK;
+                ready = found and line.count >= sightings;
+            } else ready = false;
+        } else found = cy.gun_lead(&target, power, &aim) == cy.OK;
+        if (!found) aim = .{ .heading = target.bearing, .pitch = target.elevation, .time = 0 };
         _ = cy.gun_aim_heading(aim.heading);
         _ = cy.gun_aim_pitch(aim.pitch);
         var now: cy.Direction = .{};
@@ -152,7 +268,7 @@ fn turn() void {
         _ = cy.gun_aim_now(&now);
         _ = cy.gun_can_fire(power, 10, &can_fire);
         const on_target = @abs(angleDiff(aim.heading, now.heading)) < 3 and @abs(aim.pitch - now.pitch) < 3;
-        if (on_target and can_fire == 1) {
+        if (ready and on_target and can_fire == 1) {
             _ = cy.gun_fire();
             _ = cy.gun_power(power);
         }
@@ -227,7 +343,7 @@ fn turn() void {
     // The storm drifts across the arena and hurts anything inside it. Near its
     // edge, step out across its path: at right angles to its drift, on the
     // side this robot is already on, so it passes by.
-    var storm: cy.Storm = .{};
+    var storm: cy.Storm = undefined;
     var margin: f64 = 0;
     if (cy.nav_storm(&storm) == cy.OK and cy.nav_storm_margin(&me, &margin) == cy.OK and margin > -60) {
         const away = bearingTo(storm.center, me);
@@ -237,7 +353,7 @@ fn turn() void {
     }
 
     // Sudden death: head back inside the safe zone.
-    var zone: cy.Zone = .{};
+    var zone: cy.Zone = undefined;
     if (cy.nav_zone(&zone) == cy.OK and cy.nav_zone_margin(&me, &margin) == cy.OK and margin < 60) {
         const climb = if (zone.shape == cy.SHAPE_SPHERE) elevationTo(me, zone.center) else 0;
         steer(0.8, bearingTo(me, zone.center), climb, 30, heading, pitch);

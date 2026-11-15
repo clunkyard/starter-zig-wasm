@@ -394,7 +394,7 @@ pub extern "clunkyard" fn gun_shot_damage(power: f64, out: *f64) i32;
 pub extern "clunkyard" fn gun_power_for_speed(speed: f64, out: *f64) i32;
 /// The power whose shot covers this range in this time, within the legal powers.
 pub extern "clunkyard" fn gun_power_for_flight_time(range: f64, seconds: f64, out: *f64) i32;
-/// The intercept if the contact holds its tracked velocity: the aim at which a shot fired now meets it then; absent when no shot reaches it. It is a starting point, and a target that turns, reverses or weaves beats it; for your own prediction, use lead_point.
+/// The intercept if the contact holds its tracked velocity (tracker.velocity, smoothed as tracker.configure sets; zero for a passive contact or an untracked robot): the aim at which a shot fired now meets it then; absent when no shot reaches it. It is a starting point, and a target that turns, reverses or weaves beats it; for your own prediction, use lead_point.
 pub extern "clunkyard" fn gun_lead_v1(contact: *const ContactV1, power: f64, out: *SolutionV1) i32;
 /// The intercept geometry for your own prediction: the aim at which a shot fired now meets a point that starts at this position and moves at this velocity; absent when no shot reaches it.
 pub extern "clunkyard" fn gun_lead_point_v1(position: *const Vec3, velocity: *const Vec3, power: f64, out: *SolutionV1) i32;
@@ -454,7 +454,7 @@ pub extern "clunkyard" fn sensors_position_of_v1(contact: *const ContactV1, out:
 pub extern "clunkyard" fn tracker_cue_v1(out: *CueV1) i32;
 /// How fast the nearest contact's bearing turns, from two sightings.
 pub extern "clunkyard" fn tracker_nearest_bearing_rate(out: *f64) i32;
-/// The robot's tracked velocity; zero when it has no track.
+/// The robot's tracked velocity, the one gun.lead uses: the difference of its first two sightings, then smoothing × the old velocity + (1 − smoothing) × each newer difference; zero when it has no track.
 pub extern "clunkyard" fn tracker_velocity(slot: i32, out: *Vec3) i32;
 /// Where the robot was last seen, if it was.
 pub extern "clunkyard" fn tracker_position(slot: i32, out: *Vec3) i32;
