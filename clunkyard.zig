@@ -187,6 +187,16 @@ pub const CueV1 = extern struct {
 };
 pub const Cue = CueV1;
 
+/// One sighting of a robot, as the sensors measured it: no smoothing and no derived velocity. 48 bytes.
+pub const SightingV1 = extern struct {
+    tick: i32 = 0,
+    source: i32 = 0,
+    bearing_error: f64 = 0,
+    range_error: f64 = 0,
+    position: Vec3 = .{},
+};
+pub const Sighting = SightingV1;
+
 /// Where to aim for a shot fired now to meet a target, and when it meets it. 24 bytes.
 pub const SolutionV1 = extern struct {
     heading: f64 = 0,
@@ -376,9 +386,9 @@ pub extern "clunkyard" fn gun_shot_damage(power: f64, out: *f64) i32;
 pub extern "clunkyard" fn gun_power_for_speed(speed: f64, out: *f64) i32;
 /// The power whose shot covers this range in this time, within the legal powers.
 pub extern "clunkyard" fn gun_power_for_flight_time(range: f64, seconds: f64, out: *f64) i32;
-/// The aim at which a shot fired now meets the contact if it holds its tracked velocity; absent when no shot reaches it.
+/// The intercept if the contact holds its tracked velocity: the aim at which a shot fired now meets it then; absent when no shot reaches it. It is a starting point, and a target that turns, reverses or weaves beats it; for your own prediction, use lead_point.
 pub extern "clunkyard" fn gun_lead_v1(contact: *const ContactV1, power: f64, out: *SolutionV1) i32;
-/// The aim at which a shot fired now meets a point moving at this velocity; absent when no shot reaches it.
+/// The intercept geometry for your own prediction: the aim at which a shot fired now meets a point that starts at this position and moves at this velocity; absent when no shot reaches it.
 pub extern "clunkyard" fn gun_lead_point_v1(position: *const Vec3, velocity: *const Vec3, power: f64, out: *SolutionV1) i32;
 /// Ask the turret to turn toward a direction; it slews at gun.turnRate.
 pub extern "clunkyard" fn gun_aim_heading(value: f64) i32;
@@ -440,6 +450,8 @@ pub extern "clunkyard" fn tracker_nearest_bearing_rate(out: *f64) i32;
 pub extern "clunkyard" fn tracker_velocity(slot: i32, out: *Vec3) i32;
 /// Where the robot was last seen, if it was.
 pub extern "clunkyard" fn tracker_position(slot: i32, out: *Vec3) i32;
+/// The robot's last 32 precise sightings, oldest first, as measured: positions as the sensors placed them, with the errors they reported; empty when it has none. A gap in the ticks is a gap in the sightings, and a track restart does not clear them.
+pub extern "clunkyard" fn tracker_history_v1(slot: i32, out: [*]SightingV1, capacity: u32, count: *u32) i32;
 /// The tick the robot was last seen, if it was.
 pub extern "clunkyard" fn tracker_last_seen(slot: i32, out: *i32) i32;
 /// Sets the Tracker's parameters, in the robot's start only; after the first state it refuses with E_PHASE.
@@ -533,6 +545,7 @@ pub const sensors_cues = sensors_cues_v1;
 pub const sensors_contact = sensors_contact_v1;
 pub const sensors_position_of = sensors_position_of_v1;
 pub const tracker_cue = tracker_cue_v1;
+pub const tracker_history = tracker_history_v1;
 pub const nav_zone = nav_zone_v1;
 pub const nav_storm = nav_storm_v1;
 pub const nav_hill = nav_hill_v1;
