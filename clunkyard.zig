@@ -526,6 +526,8 @@ pub extern "clunkyard" fn status_value(value: f64) i32;
 pub extern "clunkyard" fn status_get_text(buf: [*]u8, capacity: u32, length: *u32) i32;
 /// What this tick's act holds for the status line so far, as set.
 pub extern "clunkyard" fn status_get_value(out: *f64) i32;
+/// Adds a line to this tick's act for your trace; the first four of a turn are kept and later ones dropped. Unlike session.log, the arena keeps it.
+pub extern "clunkyard" fn debug_log(line: [*]const u8, line_length: u32) i32;
 /// The number at a path, if there is one.
 pub extern "clunkyard" fn raw_number(path: [*]const u8, path_length: u32, out: *f64) i32;
 /// The string at a path, if there is one.
@@ -538,7 +540,7 @@ pub extern "clunkyard" fn raw_flag(path: [*]const u8, path_length: u32, out: *i3
 pub extern "clunkyard" fn raw_count(path: [*]const u8, path_length: u32, out: *i32) i32;
 /// The last line the session read: the hello, or the latest state.
 pub extern "clunkyard" fn raw_line(buf: [*]u8, capacity: u32, length: *u32) i32;
-/// Adds fields the API does not cover to this tick's act; a key the API writes (v, type, tick, drive, forces, aim, scan, fire, status) is refused with E_ARGUMENT.
+/// Adds fields the API does not cover to this tick's act; a key the API writes (v, type, tick, drive, forces, aim, scan, fire, status, log) is refused with E_ARGUMENT.
 pub extern "clunkyard" fn raw_extra(json: [*]const u8, json_length: u32) i32;
 /// Writes a line to standard error, never to the protocol.
 pub extern "clunkyard" fn session_log(line: [*]const u8, line_length: u32) i32;
