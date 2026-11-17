@@ -197,6 +197,16 @@ pub const SightingV1 = extern struct {
 };
 pub const Sighting = SightingV1;
 
+/// How far your edge is from the walls, from your position, your radius and the arena size. 56 bytes.
+pub const WallMarginV1 = extern struct {
+    x: f64 = 0,
+    y: f64 = 0,
+    z: f64 = 0,
+    nearest: f64 = 0,
+    normal: Vec3 = .{},
+};
+pub const WallMargin = WallMarginV1;
+
 /// Where to aim for a shot fired now to meet a target, and when it meets it. 24 bytes.
 pub const SolutionV1 = extern struct {
     heading: f64 = 0,
@@ -306,6 +316,8 @@ pub extern "clunkyard" fn me_attitude_v1(out: *AttitudeV1) i32;
 pub extern "clunkyard" fn me_grounded(out: *i32) i32;
 /// In 3D, the height of your underside above the ground.
 pub extern "clunkyard" fn me_altitude(out: *f64) i32;
+/// The walls that stopped or bounced your move in the tick just simulated, reported by the arena (self.wall); zero when none did. Under gravity the ground is not a wall (me.grounded), so z is at most the ceiling's -1 there.
+pub extern "clunkyard" fn me_wall_contact(out: *Vec3) i32;
 /// What the previous tick applied to you.
 pub extern "clunkyard" fn me_applied_v1(out: *AppliedV1) i32;
 /// Your turret and scanner are mounted on the hull: gun.aim, scanner.set, gun.aim_now and scanner.last are in your chassis frame, not world axes.
@@ -488,6 +500,8 @@ pub extern "clunkyard" fn nav_hill_margin(point: *const Vec3, out: *f64) i32;
 pub extern "clunkyard" fn nav_hill_contains(point: *const Vec3, margin: f64, out: *i32) i32;
 /// How far a point is from the hill's edge, 0 inside; absent while there is none.
 pub extern "clunkyard" fn nav_hill_distance_from(point: *const Vec3, out: *f64) i32;
+/// How far the edge of your robot is from the walls: from your position, your radius (hello.robot.radius) and the arena size, nothing the arena reports.
+pub extern "clunkyard" fn nav_wall_margin_v1(out: *WallMarginV1) i32;
 /// Every pickup on the field.
 pub extern "clunkyard" fn nav_pickups_v1(out: [*]PickupV1, capacity: u32, count: *u32) i32;
 /// The pickup of this kind nearest you by field distance, if there is one.
@@ -563,6 +577,7 @@ pub const tracker_history = tracker_history_v1;
 pub const nav_zone = nav_zone_v1;
 pub const nav_storm = nav_storm_v1;
 pub const nav_hill = nav_hill_v1;
+pub const nav_wall_margin = nav_wall_margin_v1;
 pub const nav_pickups = nav_pickups_v1;
 pub const nav_nearest_pickup = nav_nearest_pickup_v1;
 pub const angles_to_chassis = angles_to_chassis_v1;
