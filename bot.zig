@@ -30,8 +30,8 @@
 // arena: arena_size arena_gravity arena_terrain_kind arena_ground_height
 // me: me_health me_position me_velocity me_heading me_pitch me_roll
 //   me_angular_velocity me_attitude me_grounded me_altitude
-//   me_wall_contact me_applied me_hull_mounts me_to_mount me_from_mount
-//   me_mount_toward
+//   me_wall_contact me_hurt me_applied me_hull_mounts me_to_mount
+//   me_from_mount me_mount_toward
 // battery: battery_charge battery_capacity battery_regen
 //   battery_sustainable_drive battery_compute battery_drive_cost
 // drive: drive_hover_lift drive_throttle drive_turn drive_pitch_turn
@@ -59,6 +59,10 @@
 //   nav_hill nav_hill_margin nav_hill_contains nav_hill_distance_from
 //   nav_wall_margin nav_pickups nav_nearest_pickup nav_field_distance
 // score: score_me score_best score_armour
+// drone: drone_has drone_ready drone_in_flight drone_launches_left
+//   drone_report drone_sightings drone_launch drone_launch_heading
+//   drone_launch_pitch drone_launch_param drone_brief drone_get_launch
+//   drone_get_launch_heading drone_get_launch_pitch drone_get_launch_param
 // angles: angles_normalize angles_angle_diff angles_bearing_to
 //   angles_elevation_to angles_direction angles_distance angles_to_chassis
 //   angles_from_chassis angles_clamp

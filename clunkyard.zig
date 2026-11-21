@@ -20,9 +20,9 @@
 //!         cy.exportRobot(null, turn);
 //!     }
 
-pub const API_VERSION = "2.0.0";
+pub const API_VERSION = "2.1.0";
 pub const API_MAJOR: i32 = 2;
-pub const API_MINOR: i32 = 0;
+pub const API_MINOR: i32 = 1;
 /// Done.
 pub const OK: i32 = 0;
 /// Absent, which is not an error: no precise contact, a mechanic that is off, a shot that cannot reach, or a field that is unset.
@@ -57,6 +57,10 @@ pub const SOURCE_MUZZLE: i32 = 5;
 pub const SOURCE_MOTION: i32 = 6;
 /// source: ping
 pub const SOURCE_PING: i32 = 7;
+/// source: launch
+pub const SOURCE_LAUNCH: i32 = 8;
+/// source: drone
+pub const SOURCE_DRONE: i32 = 9;
 /// mode: none
 pub const MODE_NONE: i32 = 0;
 /// mode: 2d
@@ -119,6 +123,20 @@ pub const EVENT_HELLO: i32 = 1;
 pub const EVENT_STATE: i32 = 2;
 /// event: end
 pub const EVENT_END: i32 = 3;
+/// report_state: none
+pub const REPORT_STATE_NONE: i32 = 0;
+/// report_state: flying
+pub const REPORT_STATE_FLYING: i32 = 1;
+/// report_state: lost
+pub const REPORT_STATE_LOST: i32 = 2;
+/// report_state: ended
+pub const REPORT_STATE_ENDED: i32 = 3;
+/// sighting_kind: none
+pub const SIGHTING_KIND_NONE: i32 = 0;
+/// sighting_kind: robot
+pub const SIGHTING_KIND_ROBOT: i32 = 1;
+/// sighting_kind: drone
+pub const SIGHTING_KIND_DRONE: i32 = 2;
 
 /// A vector in world axes. 24 bytes.
 pub const Vec3 = extern struct {
@@ -155,6 +173,15 @@ pub const AppliedV1 = extern struct {
     brake: f64 = 0,
 };
 pub const Applied = AppliedV1;
+
+/// The health you lost in the tick just simulated, by what took it, after armour; all 0 when you lost none. Never who or where it came from. 32 bytes.
+pub const HurtV1 = extern struct {
+    shot: f64 = 0,
+    burst: f64 = 0,
+    collision: f64 = 0,
+    boundary: f64 = 0,
+};
+pub const Hurt = HurtV1;
 
 /// The scan that produced this tick's contacts: where the scanner points now, after slewing toward your previous act's scan. 32 bytes.
 pub const ScanV1 = extern struct {
@@ -258,6 +285,33 @@ pub const PickupV1 = extern struct {
 };
 pub const Pickup = PickupV1;
 
+/// Your drone's newest report, made at tick and delivered a report period later. 72 bytes.
+pub const ReportV1 = extern struct {
+    state: i32 = 0,
+    tick: i32 = 0,
+    flares: i32 = 0,
+    reserved: i32 = 0,
+    age: f64 = 0,
+    say: f64 = 0,
+    heading: f64 = 0,
+    pitch: f64 = 0,
+    position: Vec3 = .{},
+};
+pub const Report = ReportV1;
+
+/// One thing your drone saw, as its noisy scanner measured it. 72 bytes.
+pub const DroneSightingV1 = extern struct {
+    kind: i32 = 0,
+    tick: i32 = 0,
+    range: f64 = 0,
+    bearing: f64 = 0,
+    elevation: f64 = 0,
+    bearing_error: f64 = 0,
+    range_error: f64 = 0,
+    position: Vec3 = .{},
+};
+pub const DroneSighting = DroneSightingV1;
+
 /// How the match charges compute against the battery. 16 bytes.
 pub const ComputeV1 = extern struct {
     k: f64 = 0,
@@ -318,6 +372,8 @@ pub extern "clunkyard" fn me_grounded(out: *i32) i32;
 pub extern "clunkyard" fn me_altitude(out: *f64) i32;
 /// The walls that stopped or bounced your move in the tick just simulated, reported by the arena (self.wall); zero when none did. Under gravity the ground is not a wall (me.grounded), so z is at most the ceiling's -1 there.
 pub extern "clunkyard" fn me_wall_contact(out: *Vec3) i32;
+/// The health you lost in the tick just simulated, by cause: shots that hit you, shots that burst near you, collisions with robots and the boundary (the zone, the stall ring or the storm), as the arena reports it (self.hurt); all 0 when you lost none. It never names the robot behind a loss or where it came from.
+pub extern "clunkyard" fn me_hurt_v1(out: *HurtV1) i32;
 /// What the previous tick applied to you.
 pub extern "clunkyard" fn me_applied_v1(out: *AppliedV1) i32;
 /// Your turret and scanner are mounted on the hull: gun.aim, scanner.set, gun.aim_now and scanner.last are in your chassis frame, not world axes.
@@ -514,6 +570,36 @@ pub extern "clunkyard" fn score_me(out: *f64) i32;
 pub extern "clunkyard" fn score_best(out: *f64) i32;
 /// Your armour; absent when the match has no objectives.
 pub extern "clunkyard" fn score_armour(out: *f64) i32;
+/// You have a drone program to launch (state.drone.has).
+pub extern "clunkyard" fn drone_has(out: *i32) i32;
+/// A launch this tick would be accepted (state.drone.ready).
+pub extern "clunkyard" fn drone_ready(out: *i32) i32;
+/// Your drone is in the air (state.drone.inFlight).
+pub extern "clunkyard" fn drone_in_flight(out: *i32) i32;
+/// The launches you have left (state.drone.launchesLeft).
+pub extern "clunkyard" fn drone_launches_left(out: *i32) i32;
+/// Your drone's newest report, kept after the drone ends; absent before the first.
+pub extern "clunkyard" fn drone_report_v1(out: *ReportV1) i32;
+/// What the newest report saw, nearest first, each projected to a world point from the report's position; empty with no report.
+pub extern "clunkyard" fn drone_sightings_v1(out: [*]DroneSightingV1, capacity: u32, count: *u32) i32;
+/// Ask to launch your drone this tick; the arena decides whether drone.ready allows it.
+pub extern "clunkyard" fn drone_launch() i32;
+/// Ask to launch your drone this tick; the arena decides whether drone.ready allows it.
+pub extern "clunkyard" fn drone_launch_heading(value: f64) i32;
+/// Ask to launch your drone this tick; the arena decides whether drone.ready allows it.
+pub extern "clunkyard" fn drone_launch_pitch(value: f64) i32;
+/// Ask to launch your drone this tick; the arena decides whether drone.ready allows it.
+pub extern "clunkyard" fn drone_launch_param(value: f64) i32;
+/// Sets one number of this tick's launch brief, which the drone program reads as brief-1 to brief-8; unset numbers before the highest set one go as 0, but brief-1 goes as the launch param when that is set. It goes only with drone.launch, and a later call replaces the number.
+pub extern "clunkyard" fn drone_brief(index: i32, value: f64) i32;
+/// What this tick's act holds for a drone field so far, as set.
+pub extern "clunkyard" fn drone_get_launch(out: *f64) i32;
+/// What this tick's act holds for a drone field so far, as set.
+pub extern "clunkyard" fn drone_get_launch_heading(out: *f64) i32;
+/// What this tick's act holds for a drone field so far, as set.
+pub extern "clunkyard" fn drone_get_launch_pitch(out: *f64) i32;
+/// What this tick's act holds for a drone field so far, as set.
+pub extern "clunkyard" fn drone_get_launch_param(out: *f64) i32;
 /// An angle brought into 0 to 360, exactly: degrees % 360, plus 360 when that is negative.
 pub extern "clunkyard" fn angles_normalize(degrees: f64, out: *f64) i32;
 /// The signed turn from current to target: normalize(target - current + 540) - 180.
@@ -554,7 +640,7 @@ pub extern "clunkyard" fn raw_flag(path: [*]const u8, path_length: u32, out: *i3
 pub extern "clunkyard" fn raw_count(path: [*]const u8, path_length: u32, out: *i32) i32;
 /// The last line the session read: the hello, or the latest state.
 pub extern "clunkyard" fn raw_line(buf: [*]u8, capacity: u32, length: *u32) i32;
-/// Adds fields the API does not cover to this tick's act; a key the API writes (v, type, tick, drive, forces, aim, scan, fire, status, log) is refused with E_ARGUMENT.
+/// Adds fields the API does not cover to this tick's act; a key the API writes (v, type, tick, drive, forces, aim, scan, fire, drone, status, log) is refused with E_ARGUMENT.
 pub extern "clunkyard" fn raw_extra(json: [*]const u8, json_length: u32) i32;
 /// Writes a line to standard error, never to the protocol.
 pub extern "clunkyard" fn session_log(line: [*]const u8, line_length: u32) i32;
@@ -562,6 +648,7 @@ pub extern "clunkyard" fn session_log(line: [*]const u8, line_length: u32) i32;
 pub extern "clunkyard" fn robot_seed(out: *u64) i32;
 
 pub const me_attitude = me_attitude_v1;
+pub const me_hurt = me_hurt_v1;
 pub const me_applied = me_applied_v1;
 pub const battery_compute = battery_compute_v1;
 pub const gun_lead = gun_lead_v1;
@@ -580,6 +667,8 @@ pub const nav_hill = nav_hill_v1;
 pub const nav_wall_margin = nav_wall_margin_v1;
 pub const nav_pickups = nav_pickups_v1;
 pub const nav_nearest_pickup = nav_nearest_pickup_v1;
+pub const drone_report = drone_report_v1;
+pub const drone_sightings = drone_sightings_v1;
 pub const angles_to_chassis = angles_to_chassis_v1;
 pub const angles_from_chassis = angles_from_chassis_v1;
 
